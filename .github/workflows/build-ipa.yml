@@ -1,0 +1,56 @@
+name: Build Actell IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Prepare Rust and Xcode project
+        env:
+          ACTELL_BUNDLE_ID_PREFIX: com.zhangkeliang2916.actell
+        run: |
+          xcodebuild -version
+          rustup target add aarch64-apple-ios
+          python3 ios-app/scripts/generate_xcode_project.py
+
+      - name: Build unsigned iPhone app
+        run: |
+          xcodebuild build \
+            -project ios-app/PhoneAgent.xcodeproj \
+            -scheme PhoneAgent \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath .build/DeviceBuild \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            -skipPackageUpdates \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          app=.build/DeviceBuild/Build/Products/Release-iphoneos/PhoneAgent.app
+          test -d "$app"
+          test -d "$app/PlugIns/PhoneAgentLiveActivity.appex"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          test "$bundle_id" = 'com.zhangkeliang2916.actell'
+          mkdir -p .build/ipa/Payload
+          cp -R "$app" .build/ipa/Payload/
+          (cd .build/ipa && zip -qry ../Actell-unsigned.ipa Payload)
+          ls -lh .build/Actell-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Actell-unsigned-ipa
+          path: .build/Actell-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
