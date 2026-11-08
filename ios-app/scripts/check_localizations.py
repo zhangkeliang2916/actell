@@ -83,6 +83,8 @@ def non_ui_literal(item):
     # Persisted enum values and diagnostic matching must not depend on language.
     if "enumRaw" in contexts:
         return True
+    if name == "PhoneAgentApp.swift" and "type:AccessibilityProbeFixture" in contexts:
+        return True  # Fixed multilingual device-test data, not production copy.
     if name == "Providers.swift":
         if "var:reasons" in contexts and "type:LLMDiagnostics" in contexts:
             return True
@@ -92,6 +94,8 @@ def non_ui_literal(item):
         return True  # Synthetic peer identity and fixture errors; never production copy.
     if name == "PhoneAgentRuntime.swift" and any("func:" + fn in contexts for fn in ("makeModel", "invokeSiriFixtureIfNeeded", "completeBackgroundUIFixtureIfNeeded")):
         return True  # Synthetic user/model history used by UI tests.
+    if name == "ConversationPreviews.swift":
+        return True  # Synthetic conversation content for Xcode previews; never production copy.
     if name == "AgentViewModel.swift" and "func:sendDraft" in contexts and "<attachment_content>" in literal:
         return True  # Model input envelope, never a UI label.
     if name == "SkillTools.swift" and literal.startswith('"技能是内置或用户导入的任务参考'):

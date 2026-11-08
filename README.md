@@ -8,8 +8,9 @@ https://github.com/user-attachments/assets/2aefc1a7-bdf1-42e7-83b9-51bd879256c8
 
 ## Capabilities
 
-- Conversations with configurable providers and models, streaming replies, readable reasoning supplied by providers, attachments and imported text skills.
+- Conversations with configurable providers and models, streaming replies, readable reasoning supplied by providers, attachments and imported text skills. AgentKit preserves complete session history and manages a separate model context with budgeted compaction.
 - Screenshot, tap, drag and wait tools. Tool calls run in order; uncertain inputs are never automatically replayed. Ordinary chat does not require a device connection.
+- Local model tasks can read screenshots, accessibility content, or both. Automatic mode lets the model choose on each observation; the default is screenshots. Selected content is sent to the model provider, and accessibility content may include off-screen text. Every mode supports taps and drags; accessibility-only input uses logical points within the reported display bounds. The experimental accessibility reader is limited to a verified system build and does not use XCTest Runner; [scope and limitations](coredevice/docs/ACCESSIBILITY.md).
 - VPN and NCM share an App-owned system pairing identity and CoreDevice backend. Controlled device tests have demonstrated screenshots and actual taps; complete tasks, drag and long-running background operation need separate acceptance.
 - Optional audio, picture-in-picture and location background sources. New installations enable audio and residency; location and standby Live Activities start off. Saved choices remain effective, and system execution limits still apply.
 - An optional [Muse companion interface](docs/muse-remote/README.md), with per-device permissions and a separate execution runtime. A general MCP service remains future work.
@@ -41,10 +42,16 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 # Optional ESP32 route; ESP-IDF 5.5.5 must be installed. Does not flash.
 bash devices/esp32/tools/build.sh ncm
 
+# Independent model and runtime package tests
+swift test --package-path ios-app/ProviderKit
+swift test --package-path ios-app/AgentKit
+
 # Loopback protocol tests and isolated simulator tests
 CC=clang bash devices/esp32/tools/test_usb.sh
 SIMULATOR_ADHOC_SIGN=1 bash ios-app/scripts/test_core.sh <isolated-simulator-UDID>
 ```
+
+Provider continuation is capability-specific: supported Responses services can use an explicit stored response chain; ChatGPT subscription HTTP inference sends the effective context window with each request, including a summary and retained items after compaction. It does not resend the entire JSONL history. Native compact is enabled only for supported OpenAI Responses configurations; other providers use tool-free summary compaction. See [AgentKit](ios-app/AgentKit/README.md) and [ProviderKit](ios-app/ProviderKit/README.md) for responsibilities and limits.
 
 Firmware outputs are in `.build/esp32-<mode>/`. App tests use synthetic providers and temporary storage; they do not replace device acceptance. Add `RUN_UI_TESTS=1` to include UI tests. Core protocol, authorization, isolation, unknown-result, migration and stop/release coverage stays in the default target.
 
@@ -53,6 +60,8 @@ Firmware outputs are in `.build/esp32-<mode>/`. App tests use synthetic provider
 | Path | Purpose |
 | --- | --- |
 | `ios-app/` | App, tests, resources and project generation |
+| `ios-app/AgentKit/` | App-owned runtime, durable session transactions and context management |
+| `ios-app/ProviderKit/` | Model protocol contracts, streaming adapters and explicit provider capabilities |
 | `coredevice/` | App-side Swift/Rust backend |
 | `devices/esp32/` | Firmware, configurations, shared platform modules and tests |
 | `tools/` | Backend and cross-module build/test tools |
@@ -62,13 +71,12 @@ Firmware outputs are in `.build/esp32-<mode>/`. App tests use synthetic provider
 
 | Project | Current usage |
 | --- | --- |
-| [SwiftAgentKit](https://github.com/ayman3000/SwiftAgentKit) | Local source snapshot of the agent core and macros, with iOS storage compatibility patches; does not include the upstream MCP module |
-| [MacPaw/OpenAI](https://github.com/MacPaw/OpenAI) | Swift Package dependency for model API integration |
+| [MacPaw/OpenAI](https://github.com/MacPaw/OpenAI) | Remote Swift Package dependency used by ProviderKit for model protocol encoding and decoding |
 | [MarkdownUI](https://github.com/gonzalezreal/swift-markdown-ui) | Swift Package dependency for Markdown message rendering |
 | [idevice](https://github.com/jkcoxson/idevice) / [Device Hub](https://github.com/JaviSoto/device-hub-ios) | Reuses the patched idevice source and PNG validator pinned by Device Hub, with local adaptations; does not integrate the entire Device Hub app |
-| [ManifoldKit](https://github.com/ManifoldKit/ManifoldKit) | Selected and adapted tool-call presentation components, not a package dependency on the entire framework |
 | [ESP-IDF](https://github.com/espressif/esp-idf/tree/v5.5.5), [esp_tinyusb](https://github.com/espressif/esp-usb), [TinyUSB](https://github.com/hathach/tinyusb) | ESP32 firmware toolchain and USB components; pinned to ESP-IDF 5.5.5, esp_tinyusb 2.2.0, and TinyUSB 0.21.0~2 |
 | [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) | Protocol schema reference and selective translation; not a Python service running on the phone or ESP32 |
+| [ipb](https://github.com/ipbtools/ipb) | Reference for the raw accessibility protocol, keyed archives and native snapshot interpretation; see [license and revision](THIRD_PARTY.md) |
 | [LocalDevVPN](https://github.com/jkcoxson/LocalDevVPN) | Verified external VPN loopback implementation; its Network Extension implementation is not copied into this repository |
 
 Pinned Swift packages are recorded in [Package.resolved](ios-app/PhoneAgent.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved); Rust dependencies are in [Cargo.toml](coredevice/rust/Cargo.toml) and [Cargo.lock](coredevice/rust/Cargo.lock). Firmware components are pinned by the [manifest](devices/esp32/firmware/main/idf_component.yml) and [lockfile](devices/esp32/firmware/dependencies.lock). See [licenses and provenance](THIRD_PARTY.md), [iOS notices](ios-app/Licenses/) and [reuse boundaries](coredevice/docs/REUSE.md) for attribution and local adaptations.

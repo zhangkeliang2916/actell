@@ -41,7 +41,7 @@ struct RunCheckpoint: Codable, Equatable {
     struct Tool: Codable, Equatable, Sendable {
         let callID: String
         let name: String
-        /// Whitelisted numeric arguments plus hashes; no purpose, text, images or credentials.
+        /// Whitelisted numeric arguments plus hashes; no description, text, images or credentials.
         let parameterSummary: String
         let argumentDigest: String
         var delivery: Delivery = .prepared
@@ -74,9 +74,11 @@ extension RunCheckpointStorage {
     init(directory: URL? = nil) throws {
         let root = try directory ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("PhoneAgent", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        var excludedRoot = root
-        var attributes = URLResourceValues(); attributes.isExcludedFromBackup = true
-        try excludedRoot.setResourceValues(attributes)
+        if directory == nil {
+            var excludedRoot = root
+            var attributes = URLResourceValues(); attributes.isExcludedFromBackup = true
+            try excludedRoot.setResourceValues(attributes)
+        }
         file = root.appendingPathComponent("run-checkpoint-v1.json")
     }
     func load() throws -> RunCheckpoint? { try loadRecoveries().first }

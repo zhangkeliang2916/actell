@@ -46,8 +46,24 @@ struct ToolStep: Codable, Sendable, Equatable {
     var arguments: String?
     var skillName: String?
     var displayArguments: String? { Self.nonemptyArguments(arguments) }
+    var expectsScreenshotPreview: Bool {
+        guard name == "screenshot" else { return false }
+        let object = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any]
+        return object?["screen_information_mode"] as? String != ScreenInformationMode.accessibility.rawValue
+    }
     var displayResult: String {
-        if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return result }
+        if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard name == "screenshot",
+                  var object = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any],
+                  let observation = object["accessibility"] as? [String: Any],
+                  let nodes = observation["nodes"] as? [[String: Any]] else { return result }
+            // Derive display details without changing the persisted tool result or model context.
+            var summary: [String: Any] = ["status": observation["status"] as? String ?? "unavailable", "nodeCount": nodes.count]
+            if let reason = observation["reason"] as? String { summary["reason"] = reason }
+            object["accessibility"] = summary
+            guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return result }
+            return String(decoding: data, as: UTF8.self)
+        }
         switch state {
         case .cancelled: return String(localized: "This call was canceled. Its result was not saved.")
         case .interrupted: return String(localized: "Execution was interrupted. Its result was not saved.")
@@ -72,6 +88,7 @@ struct ToolStep: Codable, Sendable, Equatable {
         return operation == .processing ? "wrench.and.screwdriver" : operation.symbol
     }
     var title: String {
+        if let description = Self.callDescription(arguments) { return description }
         switch name {
         case "screenshot": return String(localized: "View screen")
         case "tap": return String(localized: "Tap")
@@ -85,6 +102,14 @@ struct ToolStep: Codable, Sendable, Equatable {
         case "load_skill": return String(localized: "Skill") + (skillName.map { " · " + $0 } ?? "")
         default: return name
         }
+    }
+    // Prefer the model's own public call description when one was provided.
+    private static func callDescription(_ arguments: String?) -> String? {
+        guard let arguments,
+              let object = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any],
+              let description = object["description"] as? String else { return nil }
+        let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 struct ReasoningMessage: Codable, Sendable, Equatable {
@@ -102,7 +127,7 @@ struct ChatMessage: Identifiable, Codable, Sendable, Equatable {
     var attachments: [StoredAttachment]?
     var reasoning: ReasoningMessage?
 }
-struct AgentConversation: Identifiable, Codable, Sendable {
+struct AgentConversation: Identifiable, Codable, Sendable, Equatable {
     var id = UUID()
     var title = String(localized: "New conversation")
     var mode: RunMode
@@ -116,8 +141,15 @@ struct AgentConversation: Identifiable, Codable, Sendable {
     var recoveryNotices: [String: String]?
     var phase: RunPhase = .idle
     var messages: [ChatMessage] = []
+    /// Derived list cache; never part of the authoritative history encoding.
+    var cachedPreview: String? = nil
+    private enum CodingKeys: String, CodingKey {
+        case id, title, mode, createdAt, updatedAt, entry, draft, draftAttachments
+        case providerID, modelID, recoveryNotices, phase, messages
+    }
     var preview: String {
         if entry?.state == .pendingConfirmation { return String(localized: "Siri · Awaiting confirmation: \(draft)") }
+        if let cachedPreview { return cachedPreview }
         return messages.last(where: { $0.role == .user || $0.role == .assistant })?.text ?? String(localized: "Start a new task or question")
     }
 }
